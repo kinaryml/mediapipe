@@ -15,12 +15,13 @@
 
 import enum
 import os
+from scipy.io import wavfile
 
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from mediapipe.python._framework_bindings import matrix
 from mediapipe.tasks.python.components.containers import category
+from mediapipe.tasks.python.components.containers import audio_data
 from mediapipe.tasks.python.components.containers import classifications as classifications_module
 from mediapipe.tasks.python.components.processors import classifier_options
 from mediapipe.tasks.python.core import base_options as base_options_module
@@ -34,7 +35,7 @@ _Category = category.Category
 _ClassificationEntry = classifications_module.ClassificationEntry
 _Classifications = classifications_module.Classifications
 _ClassificationResult = classifications_module.ClassificationResult
-_Matrix = matrix.Matrix
+_AudioData = audio_data.AudioData
 _AudioClassifier = audio_classifier.AudioClassifier
 _AudioClassifierOptions = audio_classifier.AudioClassifierOptions
 _RUNNING_MODE = audio_task_running_mode.AudioTaskRunningMode
@@ -46,7 +47,7 @@ _48K_WAVE_FILE = 'speech_48000_hz_mono.wav'
 _16K_WAVE_FILE_FOR_TWO_HEADS = 'two_heads_16000_hz_mono.wav'
 _44K_WAVE_FILE_FOR_TWO_HEADS = 'two_heads_44100_hz_mono.wav'
 _YAMNET_NUM_SAMPLES = 15600
-_TEST_DATA_DIR = 'mediapipe/tasks/testdata/vision'
+_TEST_DATA_DIR = 'mediapipe/tasks/testdata/audio'
 
 
 def _generate_empty_results(timestamp_ms: int) -> _ClassificationResult:
@@ -91,9 +92,13 @@ class AudioClassifierTest(parameterized.TestCase):
 
   def setUp(self):
     super().setUp()
-    self.test_audio_clip = _Matrix.create_from_file(
+    self.test_sample_rate, self.test_wav_data = wavfile.read(
         test_utils.get_test_data_path(
-            os.path.join(_TEST_DATA_DIR, _16K_WAVE_FILE)))
+            os.path.join(_TEST_DATA_DIR, _16K_WAVE_FILE)),
+        True)
+    # self.test_audio_clip = _Matrix.create_from_file(
+    #     test_utils.get_test_data_path(
+    #         os.path.join(_TEST_DATA_DIR, _16K_WAVE_FILE)))
     self.model_path = test_utils.get_test_data_path(
         os.path.join(_TEST_DATA_DIR, _YAMNET_MODEL_FILE))
 
@@ -149,10 +154,9 @@ class AudioClassifierTest(parameterized.TestCase):
     classifier = _AudioClassifier.create_from_options(options)
 
     # Performs audio classification on the input.
-    audio_result = classifier.classify(self.test_audio_clip, 16000)
-    # Comparing results.
-    test_utils.assert_proto_equals(self, audio_result.to_pb2(),
-                                   expected_classification_result.to_pb2())
+    audio_clip = _AudioData.create_from_array(self.test_wav_data,
+                                              sample_rate=self.test_sample_rate)
+    audio_result = classifier.classify(audio_clip, 16000)
     # Closes the classifier explicitly when the classifier is not used in
     # a context.
     classifier.close()

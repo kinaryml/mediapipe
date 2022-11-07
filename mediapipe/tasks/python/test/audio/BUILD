@@ -26,13 +26,13 @@ py_test(
         "//mediapipe/tasks/testdata/audio:test_models",
     ],
     deps = [
-        "//mediapipe/python:_framework_bindings",
         "//mediapipe/tasks/python/components/containers:category",
+        "//mediapipe/tasks/python/components/containers:audio_data",
         "//mediapipe/tasks/python/components/containers:classifications",
         "//mediapipe/tasks/python/components/processors:classifier_options",
         "//mediapipe/tasks/python/core:base_options",
         "//mediapipe/tasks/python/test:test_utils",
         "//mediapipe/tasks/python/audio:audio_classifier",
-        "//mediapipe/tasks/python/audio/core:vision_task_running_mode",
+        "//mediapipe/tasks/python/audio/core:audio_task_running_mode",
     ],
 )

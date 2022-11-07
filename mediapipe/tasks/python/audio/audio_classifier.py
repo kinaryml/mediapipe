@@ -14,15 +14,15 @@
 """MediaPipe audio classifier task."""
 
 import dataclasses
-from typing import Callable, Mapping, Optional
+from typing import Callable, Mapping, Optional, List
 
 from mediapipe.python import packet_creator
 from mediapipe.python import packet_getter
 # TODO: Import MPImage directly one we have an alias
-from mediapipe.python._framework_bindings import matrix
 from mediapipe.python._framework_bindings import packet
 from mediapipe.tasks.cc.components.containers.proto import classifications_pb2
 from mediapipe.tasks.cc.audio.audio_classifier.proto import audio_classifier_graph_options_pb2
+from mediapipe.tasks.python.components.containers import audio_data
 from mediapipe.tasks.python.components.containers import classifications
 from mediapipe.tasks.python.components.processors import classifier_options
 from mediapipe.tasks.python.core import base_options as base_options_module
@@ -37,8 +37,10 @@ _ClassifierOptions = classifier_options.ClassifierOptions
 _RunningMode = audio_task_running_mode.AudioTaskRunningMode
 _TaskInfo = task_info_module.TaskInfo
 
-_CLASSIFICATION_RESULT_OUT_STREAM_NAME = 'classification_result_out'
-_CLASSIFICATION_RESULT_TAG = 'CLASSIFICATION_RESULT'
+_CLASSIFICATIONS_STREAM_NAME = 'classifications_out'
+_CLASSIFICATIONS_TAG = 'CLASSIFICATIONS'
+_TIMESTAMPED_CLASSIFICATIONS_STREAM_NAME = 'timestamped_classifications_out'
+_TIMESTAMPED_CLASSIFICATIONS_TAG = 'TIMESTAMPED_CLASSIFICATIONS'
 _AUDIO_IN_STREAM_NAME = 'audio_in'
 _AUDIO_TAG = 'AUDIO'
 _SAMPLE_RATE_STREAM_NAME = 'sample_rate_in'
@@ -85,14 +87,14 @@ class AudioClassifierOptions:
     return _AudioClassifierGraphOptionsProto(
         base_options=base_options_proto,
         classifier_options=classifier_options_proto,
-        sample_rate=self.sample_rate)
+        default_input_audio_sample_rate=self.sample_rate)
 
 
 class AudioClassifier(base_audio_task_api.BaseAudioTaskApi):
   """Performs audio classification on audio clips or audio stream."""
 
   @classmethod
-  def create_from_model_path(cls, model_path: str) -> 'ImageClassifier':
+  def create_from_model_path(cls, model_path: str) -> 'AudioClassifier':
     """Creates an `AudioClassifier` object from a TensorFlow Lite model and the default `AudioClassifierOptions`.
 
     Args:
@@ -137,13 +139,13 @@ class AudioClassifier(base_audio_task_api.BaseAudioTaskApi):
       classification_result_proto = classifications_pb2.ClassificationResult()
       classification_result_proto.CopyFrom(
           packet_getter.get_proto(
-              output_packets[_CLASSIFICATION_RESULT_OUT_STREAM_NAME]))
+              output_packets[_CLASSIFICATIONS_STREAM_NAME]))
 
       classification_result = classifications.ClassificationResult([
           classifications.Classifications.create_from_pb2(classification)
           for classification in classification_result_proto.classifications
       ])
-      timestamp = output_packets[_CLASSIFICATION_RESULT_OUT_STREAM_NAME].timestamp
+      timestamp = output_packets[_CLASSIFICATIONS_STREAM_NAME].timestamp
       options.result_callback(classification_result,
                               timestamp.value // _MICRO_SECONDS_PER_MILLISECOND)
 
@@ -155,28 +157,32 @@ class AudioClassifier(base_audio_task_api.BaseAudioTaskApi):
         ],
         output_streams=[
             ':'.join([
-                _CLASSIFICATION_RESULT_TAG,
-                _CLASSIFICATION_RESULT_OUT_STREAM_NAME
+                _CLASSIFICATIONS_TAG,
+                _CLASSIFICATIONS_STREAM_NAME,
+            ]),
+            ':'.join([
+                _TIMESTAMPED_CLASSIFICATIONS_TAG,
+                _TIMESTAMPED_CLASSIFICATIONS_STREAM_NAME
             ])
         ],
         task_options=options)
     return cls(
         task_info.generate_graph_config(
             enable_flow_limiting=options.running_mode ==
-            _RunningMode.LIVE_STREAM), options.running_mode,
+            _RunningMode.AUDIO_STREAM), options.running_mode,
         packets_callback if options.result_callback else None)
 
   def classify(
       self,
-      audio_clip: matrix.Matrix,
+      audio_clip: audio_data.AudioData,
       audio_sample_rate: float,
-  ) -> classifications.ClassificationResult:
+  ) -> List[classifications.ClassificationResult]:
     """Sends audio data (a block in a continuous audio stream) to perform audio
     classification. Only use this method when the AudioClassifier is created
     with the audio clips running mode.
 
     Args:
-      audio_clip: The audio clip is represented as a MediaPipe Matrix that has
+      audio_clip: The audio clip is represented as `AudioData` that has
         the number of channels rows and the number of samples per channel
         columns. The method accepts audio clips with various length and audio
         sample rate. It's required to provide the corresponding audio sample
@@ -191,23 +197,26 @@ class AudioClassifier(base_audio_task_api.BaseAudioTaskApi):
       RuntimeError: If audio classification failed to run.
     """
     output_packets = self._process_audio_clip({
-        _AUDIO_IN_STREAM_NAME: packet_creator.create_matrix(audio_clip),
-        _SAMPLE_RATE_STREAM_NAME: packet_creator.create_float(audio_sample_rate)
+        _AUDIO_IN_STREAM_NAME: packet_creator.create_matrix(audio_clip.buffer),
+        _SAMPLE_RATE_STREAM_NAME: packet_creator.create_double(
+            float(audio_sample_rate))
     })
 
-    classification_result_proto = classifications_pb2.ClassificationResult()
-    classification_result_proto.CopyFrom(
-        packet_getter.get_proto(
-            output_packets[_CLASSIFICATION_RESULT_OUT_STREAM_NAME]))
+    timestamped_results_proto = packet_getter.get_proto_list(
+        output_packets[_TIMESTAMPED_CLASSIFICATIONS_STREAM_NAME])
 
-    return classifications.ClassificationResult([
+    timestamped_classifications = []
+
+    return [
+      classifications.ClassificationResult([
         classifications.Classifications.create_from_pb2(classification)
-        for classification in classification_result_proto.classifications
-    ])
+        for classification in timestamped_classifications
+      ])
+    ]
 
   def classify_async(
       self,
-      audio_block: matrix.Matrix,
+      audio_block: audio_data.AudioData,
       audio_sample_rate: float,
       timestamp_ms: int,
   ) -> None:
@@ -220,7 +229,7 @@ class AudioClassifier(base_audio_task_api.BaseAudioTaskApi):
       - The input timestamp in milliseconds.
 
     Args:
-      audio_block: The audio block is represented as a MediaPipe Matrix that has
+      audio_block: The audio block is represented as `AudioData` that has
         the number of channels rows and the number of samples per channel
         columns. The audio data will be resampled, accumulated, and framed to
         the proper size for the underlying model to consume. It's required to
@@ -235,9 +244,9 @@ class AudioClassifier(base_audio_task_api.BaseAudioTaskApi):
     """
     self._send_audio_stream_data({
         _AUDIO_IN_STREAM_NAME:
-            packet_creator.create_matrix(audio_block).at(
+            packet_creator.create_matrix(audio_block.buffer).at(
                 timestamp_ms * _MICRO_SECONDS_PER_MILLISECOND),
         _SAMPLE_RATE_STREAM_NAME:
-            packet_creator.create_float(audio_sample_rate).at(
+            packet_creator.create_double(float(audio_sample_rate)).at(
                 timestamp_ms * _MICRO_SECONDS_PER_MILLISECOND)
     })
