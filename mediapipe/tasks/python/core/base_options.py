@@ -64,17 +64,17 @@ class BaseOptions:
     else:
       full_path = None
 
-    platform = platform.system()
+    platform_name = platform.system()
     
     if self.delegate is not None:
-      if platform == "Linux":
+      if platform_name == "Linux":
         if self.delegate == BaseOptions.Delegate.GPU:
           acceleration_proto = _AccelerationProto(gpu=_DelegateProto.Gpu())
         else:
           acceleration_proto = _AccelerationProto(tflite=_DelegateProto.TfLite())
-      elif platform == "Windows":
+      elif platform_name == "Windows":
         raise Exception("Delegate is unsupported for Windows.")
-      elif platform == "Darwin":
+      elif platform_name == "Darwin":
         raise Exception("Delegate is unsupported for MacOS.")
       else:
         raise Exception("Unidentified system")
