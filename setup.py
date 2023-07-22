@@ -43,8 +43,13 @@ GPU_OPTIONS_DISBALED = ['--define=MEDIAPIPE_DISABLE_GPU=1']
 GPU_OPTIONS_ENBALED = [
     '--copt=-DTFLITE_GPU_EXTRA_GLES_DEPS',
     '--copt=-DMEDIAPIPE_OMIT_EGL_WINDOW_BIT',
+    '--config=cuda',
+    '--spawn_strategy=local',
+    '--define=no_gcp_support=true',
+    '--define=no_aws_support=true',
+    '--define=no_nccl_support=true',
     '--copt=-DMESA_EGL_NO_X11_HEADERS',
-    '--copt=-DEGL_NO_X11',
+    '--copt=-DEGL_NO_X11'
 ]
 GPU_OPTIONS = GPU_OPTIONS_DISBALED if MP_DISABLE_GPU else GPU_OPTIONS_ENBALED
 
@@ -117,8 +122,7 @@ def _modify_opencv_cmake_rule(link_opencv):
   # the OpenCV library through "@windows_opencv//:opencv".
   if not link_opencv and not IS_WINDOWS:
     content = open(MP_THIRD_PARTY_BUILD,
-                   'r').read().replace('OPENCV_SHARED_LIBS = True',
-                                       'OPENCV_SHARED_LIBS = False')
+                   'r').read()
     shutil.move(MP_THIRD_PARTY_BUILD, _get_backup_file(MP_THIRD_PARTY_BUILD))
     build_file = open(MP_THIRD_PARTY_BUILD, 'w')
     build_file.write(content)
