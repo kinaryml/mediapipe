@@ -152,7 +152,7 @@ OPENCV_MODULES = [
 # to switch to static libraries.
 OPENCV_SHARED_LIBS = True
 
-OPENCV_SO_VERSION = "3.4"
+OPENCV_SO_VERSION = "4.5"
 
 cmake(
     name = "opencv_cmake",
@@ -224,7 +224,7 @@ cmake(
         "-lavformat",
         "-lavutil",
         "-lswscale",
-        "-lavresample",
+        "-lswresample",
         "-ldl",
         "-lm",
         "-lpthread",
